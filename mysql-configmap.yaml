@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql
+  labels:
+    app: mysql
+data:
+  init.cnf: |
+    # Apply this config only on the master.
+    [mysqld]
+    log-bin
+  master-master.cnf: |
+    # Apply this config only on the group replication in multi-master.
+    [mysqld]
+    gtid_mode=ON
+    enforce_gtid_consistency=ON
+    master_info_repository=TABLE
+    relay_log_info_repository=TABLE
+    binlog_checksum=NONE
+    log_slave_updates=ON
+    log_bin=binlog
+    binlog_format=ROW
+    transaction_write_set_extraction=XXHASH64
+    loose-group_replication_group_name="aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    loose-group_replication_start_on_boot=OFF
+    loose-group_replication_bootstrap_group=OFF
+    loose-group_replication_ip_whitelist=10.203.0.0/16
+    loose-group_replication_single_primary_mode=OFF
+    event_scheduler=OFF
+  config.sh: |
+    #!/bin/bash
+    set -ex
+    mysql -h 127.0.0.1 -e "SET SQL_LOG_BIN=OFF"
+    mysql -h 127.0.0.1 -e "CREATE USER rpl_user@'%' IDENTIFIED BY 'password'"
+    mysql -h 127.0.0.1 -e "GRANT REPLICATION SLAVE ON *.* TO rpl_user@'%'"
+    mysql -h 127.0.0.1 -e "FLUSH PRIVILEGES"
+    mysql -h 127.0.0.1 -e "CHANGE MASTER TO MASTER_USER='rpl_user', MASTER_PASSWORD='password' FOR CHANNEL 'group_replication_recovery'"
+    mysql -h 127.0.0.1 -e "INSTALL PLUGIN group_replication SONAME 'group_replication.so'"
+  repl.sh: |
+    #!/bin/bash
+    set -ex
+    cd /var/lib/mysql
+    if [[ -f xtrabackup_binlog_info ]]; then
+      [[ `hostname` =~ -([0-9]+)$ ]] || exit 1
+      ordinal=${BASH_REMATCH[1]}
+      [[ `cat xtrabackup_binlog_info | tr -d  '\n'` =~ ^(.*?)[[:space:]]+(.*?)[[:space:]]+(.*?)$ ]] || exit 1
+      mv xtrabackup_binlog_info xtrabackup_binlog_info.bck
+      mysql -h 127.0.0.1 -e "SET global event_scheduler=OFF"
+      mysql -h 127.0.0.1 -e "SET SQL_LOG_BIN=OFF"
+      mysql -h 127.0.0.1 -e "RESET MASTER"
+      mysql -h 127.0.0.1 -e "RESET SLAVE ALL"
+      mysql -h 127.0.0.1 -e "SET @@GLOBAL.GTID_PURGED='${BASH_REMATCH[3]}'"
+      mysql -h 127.0.0.1 -e "CHANGE MASTER TO MASTER_USER='rpl_user', MASTER_PASSWORD='password' FOR CHANNEL 'group_replication_recovery'"
+      mysql -h 127.0.0.1 -e "SET SQL_LOG_BIN=ON"
+      mysql -h 127.0.0.1 -e "START GROUP_REPLICATION"
+      mysql -h 127.0.0.1 -e "SET global event_scheduler=ON"
+    else
+      mysql -h 127.0.0.1 -e "START GROUP_REPLICATION"
+    fi
+  bootstrap-repl.sh: |
+    #!/bin/bash
+    set -ex
+    mysql -h 127.0.0.1 -e "SET GLOBAL group_replication_bootstrap_group=ON"
+    mysql -h 127.0.0.1 -e "START GROUP_REPLICATION"
+    mysql -h 127.0.0.1 -e "SET GLOBAL group_replication_bootstrap_group=OFF"
+    mysql -h 127.0.0.1 -e "SET global event_scheduler=ON"
+    mysql -h 127.0.0.1 -e "SET SQL_LOG_BIN=ON"
+  data1.sql: |
+    CREATE DATABASE test;
+    USE test;
+    CREATE TABLE t1 (c1 INT PRIMARY KEY, c2 TEXT NOT NULL);
+    INSERT INTO t1 VALUES (1, 'Luis');
+  data2.sql: |
+    INSERT INTO test.t1 VALUES (2, 'Krol');
+  data3.sql: |
+    INSERT INTO test.t1 VALUES (3, 'Psy');
+  readiness.sh: |
+    #!/bin/bash
+    set -ex
+    mysql -sN -h 127.0.0.1 -e "SELECT * FROM performance_schema.replication_group_members WHERE MEMBER_HOST LIKE '$HOSTNAME.mysql%' AND MEMBER_STATE='ONLINE'" | grep $HOSTNAME.mysql
