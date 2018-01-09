@@ -16,9 +16,7 @@ spec:
       initContainers:
       - name: init-mysql
         image: mysql:5.7
-        command:
-        - bash
-        - /mnt/config-map/int-mysql.sh
+        command: ["bash", "/mnt/config-map/int-mysql.sh"]
         volumeMounts:
         - name: conf
           mountPath: /mnt/conf.d
@@ -26,9 +24,7 @@ spec:
           mountPath: /mnt/config-map
       - name: clone-mysql
         image: gcr.io/google-samples/xtrabackup:1.0
-        command:
-        - bash
-        - /mnt/config-map/clone-mysql.sh
+        command: ["bash", "/mnt/config-map/clone-mysql.sh"]
         volumeMounts:
         - name: mysql-data
           mountPath: /var/lib/mysql
@@ -76,9 +72,7 @@ spec:
         ports:
         - name: xtrabackup
           containerPort: 3307
-        command:
-        - bash
-        - /mnt/config-map/xtrabackup.sh
+        command: ["bash", "/mnt/config-map/xtrabackup.sh"]
         volumeMounts:
         - name: mysql-data
           mountPath: /var/lib/mysql
