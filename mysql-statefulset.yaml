@@ -61,7 +61,6 @@ spec:
         livenessProbe:
           exec:
             command: ["mysqladmin", "ping"]
-            #command: ["true"]
           initialDelaySeconds: 30
           periodSeconds: 10
           timeoutSeconds: 2
@@ -88,6 +87,12 @@ spec:
           mountPath: /etc/mysql/conf.d
         - name: config-map
           mountPath: /mnt/config-map
+        livenessProbe:
+          exec:
+            command: ["bash", "/mnt/config-map/readiness.sh"]
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 2
         resources:
           requests:
             cpu: 100m
