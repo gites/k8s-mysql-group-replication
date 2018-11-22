@@ -1,3 +1,7 @@
+# This repo is DEPRECATED
+
+Please use official MySQL operator instead --> https://github.com/oracle/mysql-operator
+
 # k8s-mysql-group-replication
 PoC for setting up MySQL Group Replication in Master-Master mode on Kubernetes
 
